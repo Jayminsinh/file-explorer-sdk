@@ -7,6 +7,7 @@ import {
   CannotMoveIntoDescendantError,
 } from './errors.js';
 import { EventEmitter } from './emitter.js';
+import { History } from './history.js';
 
 function deepFreeze(obj) {
   if (!obj || typeof obj !== 'object' || Object.isFrozen(obj)) {
@@ -24,6 +25,7 @@ export class FileExplorer {
   #rootId;
   #emitter = new EventEmitter();
   #cachedSnapshot = null;
+  #history = new History();
 
   constructor() {
     const rootId = crypto.randomUUID();
@@ -204,7 +206,21 @@ export class FileExplorer {
     }
 
     this.#nodes.set(id, node);
+    const index = parent.childIds.length;
     parent.childIds.push(id);
+
+    this.#history.push({
+      type: 'create',
+      node: {
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        parentId: node.parentId,
+        childIds: node.childIds ? [...node.childIds] : undefined,
+      },
+      parentId,
+      index,
+    });
 
     this.#notifyChange();
 
@@ -245,7 +261,15 @@ export class FileExplorer {
 
     this.#checkDuplicateName(item.parentId, trimmedName, id);
 
+    const oldName = item.name;
     item.name = trimmedName;
+
+    this.#history.push({
+      type: 'rename',
+      id,
+      oldName,
+      newName: trimmedName,
+    });
 
     this.#notifyChange();
 
@@ -296,13 +320,24 @@ export class FileExplorer {
 
     this.#checkDuplicateName(newParentId, item.name);
 
-    const oldParent = this.#nodes.get(item.parentId);
-    if (oldParent && oldParent.childIds) {
-      oldParent.childIds = oldParent.childIds.filter((childId) => childId !== id);
+    const oldParentId = item.parentId;
+    const oldParent = this.#nodes.get(oldParentId);
+    const oldIndex = oldParent && oldParent.childIds ? oldParent.childIds.indexOf(id) : -1;
+
+    if (oldParent && oldParent.childIds && oldIndex !== -1) {
+      oldParent.childIds.splice(oldIndex, 1);
     }
 
     newParent.childIds.push(id);
     item.parentId = newParentId;
+
+    this.#history.push({
+      type: 'move',
+      id,
+      oldParentId,
+      oldIndex,
+      newParentId,
+    });
 
     this.#notifyChange();
 
@@ -356,10 +391,214 @@ export class FileExplorer {
     }
 
     const deletedTree = this.#buildTree(id);
-    this.#removeSubtree(id);
+    const { nodes, parentId, index } = this.#removeSubtree(id);
+
+    this.#history.push({
+      type: 'delete',
+      nodes,
+      parentId,
+      index,
+    });
 
     this.#notifyChange();
 
     return deletedTree;
+  }
+
+  undo() {
+    const entry = this.#history.undo();
+    let description;
+
+    switch (entry.type) {
+      case 'create': {
+        const parent = this.#nodes.get(entry.parentId);
+        if (parent && parent.childIds) {
+          parent.childIds = parent.childIds.filter((cid) => cid !== entry.node.id);
+        }
+        this.#nodes.delete(entry.node.id);
+        description = {
+          action: 'create',
+          type: 'create',
+          id: entry.node.id,
+          name: entry.node.name,
+        };
+        break;
+      }
+
+      case 'rename': {
+        const item = this.#nodes.get(entry.id);
+        if (item) {
+          item.name = entry.oldName;
+        }
+        description = {
+          action: 'rename',
+          type: 'rename',
+          id: entry.id,
+          name: entry.oldName,
+        };
+        break;
+      }
+
+      case 'move': {
+        const item = this.#nodes.get(entry.id);
+        const newParent = this.#nodes.get(entry.newParentId);
+        if (newParent && newParent.childIds) {
+          newParent.childIds = newParent.childIds.filter((cid) => cid !== entry.id);
+        }
+
+        const oldParent = this.#nodes.get(entry.oldParentId);
+        if (oldParent && oldParent.childIds) {
+          if (entry.oldIndex >= 0 && entry.oldIndex <= oldParent.childIds.length) {
+            oldParent.childIds.splice(entry.oldIndex, 0, entry.id);
+          } else {
+            oldParent.childIds.push(entry.id);
+          }
+        }
+
+        if (item) {
+          item.parentId = entry.oldParentId;
+        }
+
+        description = {
+          action: 'move',
+          type: 'move',
+          id: entry.id,
+          name: item ? item.name : undefined,
+        };
+        break;
+      }
+
+      case 'delete': {
+        for (const node of entry.nodes) {
+          this.#nodes.set(node.id, {
+            ...node,
+            childIds: node.childIds ? [...node.childIds] : undefined,
+          });
+        }
+
+        const parent = this.#nodes.get(entry.parentId);
+        const rootDeletedId = entry.nodes[0].id;
+        if (parent && parent.childIds) {
+          if (entry.index >= 0 && entry.index <= parent.childIds.length) {
+            parent.childIds.splice(entry.index, 0, rootDeletedId);
+          } else {
+            parent.childIds.push(rootDeletedId);
+          }
+        }
+
+        description = {
+          action: 'delete',
+          type: 'delete',
+          id: rootDeletedId,
+          name: entry.nodes[0].name,
+        };
+        break;
+      }
+    }
+
+    this.#notifyChange();
+    return description;
+  }
+
+  redo() {
+    const entry = this.#history.redo();
+    let description;
+
+    switch (entry.type) {
+      case 'create': {
+        const nodeCopy = {
+          ...entry.node,
+          childIds: entry.node.childIds ? [...entry.node.childIds] : undefined,
+        };
+        this.#nodes.set(nodeCopy.id, nodeCopy);
+
+        const parent = this.#nodes.get(entry.parentId);
+        if (parent && parent.childIds) {
+          if (entry.index >= 0 && entry.index <= parent.childIds.length) {
+            parent.childIds.splice(entry.index, 0, nodeCopy.id);
+          } else {
+            parent.childIds.push(nodeCopy.id);
+          }
+        }
+
+        description = {
+          action: 'create',
+          type: 'create',
+          id: entry.node.id,
+          name: entry.node.name,
+        };
+        break;
+      }
+
+      case 'rename': {
+        const item = this.#nodes.get(entry.id);
+        if (item) {
+          item.name = entry.newName;
+        }
+        description = {
+          action: 'rename',
+          type: 'rename',
+          id: entry.id,
+          name: entry.newName,
+        };
+        break;
+      }
+
+      case 'move': {
+        const item = this.#nodes.get(entry.id);
+        const oldParent = this.#nodes.get(entry.oldParentId);
+        if (oldParent && oldParent.childIds) {
+          oldParent.childIds = oldParent.childIds.filter((cid) => cid !== entry.id);
+        }
+
+        const newParent = this.#nodes.get(entry.newParentId);
+        if (newParent && newParent.childIds) {
+          newParent.childIds.push(entry.id);
+        }
+
+        if (item) {
+          item.parentId = entry.newParentId;
+        }
+
+        description = {
+          action: 'move',
+          type: 'move',
+          id: entry.id,
+          name: item ? item.name : undefined,
+        };
+        break;
+      }
+
+      case 'delete': {
+        const rootDeletedId = entry.nodes[0].id;
+        const parent = this.#nodes.get(entry.parentId);
+        if (parent && parent.childIds) {
+          parent.childIds = parent.childIds.filter((cid) => cid !== rootDeletedId);
+        }
+
+        for (const node of entry.nodes) {
+          this.#nodes.delete(node.id);
+        }
+
+        description = {
+          action: 'delete',
+          type: 'delete',
+          id: rootDeletedId,
+          name: entry.nodes[0].name,
+        };
+        break;
+      }
+    }
+
+    this.#notifyChange();
+    return description;
+  }
+
+  canUndo() {
+    return this.#history.canUndo();
+  }
+
+  canRedo() {
+    return this.#history.canRedo();
   }
 }
