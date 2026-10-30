@@ -8,6 +8,7 @@ import {
 } from './errors.js';
 import { EventEmitter } from './emitter.js';
 import { History } from './history.js';
+import { search } from './search.js';
 
 function deepFreeze(obj) {
   if (!obj || typeof obj !== 'object' || Object.isFrozen(obj)) {
@@ -600,5 +601,9 @@ export class FileExplorer {
 
   canRedo() {
     return this.#history.canRedo();
+  }
+
+  searchItems(options = {}) {
+    return search(this.#nodes, options);
   }
 }
