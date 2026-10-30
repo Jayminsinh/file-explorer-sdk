@@ -1,5 +1,6 @@
 import { FileTree } from './components/FileTree/FileTree.jsx';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
+import { ErrorBanner } from './components/ErrorBanner.jsx';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
           <ThemeToggle />
         </div>
       </header>
+      <ErrorBanner />
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-64 shrink-0 border-r border-line bg-surface flex flex-col">
           <div className="h-8 px-3 flex items-center border-b border-line text-xs font-semibold uppercase tracking-wider text-ink-muted">
