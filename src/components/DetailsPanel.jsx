@@ -3,6 +3,7 @@ import { VscFile, VscFolder } from 'react-icons/vsc'
 import { useFileExplorerTree } from '../hooks/useFileExplorer'
 import { useSelectedItem } from '../hooks/useSelectedItem'
 import { countDescendants, getLocation, indexTree } from '../utils/tree'
+import { useCheckedCount } from '../context/MultiSelectContext'
 
 function Shell({ children }) {
   return (
@@ -21,7 +22,8 @@ function Row({ label, value }) {
   )
 }
 
-function DetailsPanel({ selectedCount = 0 }) {
+function DetailsPanel() {
+  const selectedCount = useCheckedCount()
   const tree = useFileExplorerTree()
   const item = useSelectedItem()
   const index = useMemo(() => indexTree(tree), [tree])

@@ -1,120 +1,110 @@
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react'
 import {
-  VscChevronRight,
   VscChevronDown,
+  VscChevronRight,
+  VscFile,
   VscFolder,
   VscFolderOpened,
-  VscFile,
-} from 'react-icons/vsc';
-import { useIsExpanded, useIsSelected, useUiActions } from '../../context/UiStateContext.jsx';
+} from 'react-icons/vsc'
+import { useIsExpanded, useIsSelected, useUiActions } from '../../context/UiStateContext'
+import { useIsChecked, useMultiSelectActions } from '../../context/MultiSelectContext'
 
-export const TreeNode = memo(function TreeNode({ node, depth = 0 }) {
-  console.log(`render TreeNode: ${node?.name}`);
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
 
-  const isExpanded = useIsExpanded(node?.id);
-  const isSelected = useIsSelected(node?.id);
-  const { toggleExpanded, select } = useUiActions();
+function sortChildren(children = []) {
+  const folders = children.filter((child) => child.type === 'folder').sort(byName)
+  const files = children.filter((child) => child.type !== 'folder').sort(byName)
+  return [...folders, ...files]
+}
 
-  const isFolder = node?.type === 'folder';
+function TreeNodeBase({ node, depth }) {
+  console.log(`render TreeNode: ${node.name}`)
 
-  const handleRowClick = useCallback(() => {
-    select(node.id);
-  }, [select, node.id]);
+  const isFolder = node.type === 'folder'
+  const isRoot = node.parentId == null
+  const isExpanded = useIsExpanded(node.id)
+  const isSelected = useIsSelected(node.id)
+  const isChecked = useIsChecked(node.id)
+  const { toggleExpanded, select } = useUiActions()
+  const { toggle } = useMultiSelectActions()
+  const children = useMemo(() => sortChildren(node.children), [node.children])
 
-  const handleChevronClick = useCallback((e) => {
-    e.stopPropagation();
-    toggleExpanded(node.id);
-  }, [toggleExpanded, node.id]);
-
-  const sortedChildren = useMemo(() => {
-    if (!isFolder || !node.children) return [];
-
-    const folders = [];
-    const files = [];
-
-    for (const child of node.children) {
-      if (child.type === 'folder') {
-        folders.push(child);
-      } else {
-        files.push(child);
+  const handleSelect = useCallback(
+    (event) => {
+      if (event.ctrlKey || event.metaKey) {
+        toggle(node.id)
+        return
       }
-    }
+      select(node.id)
+    },
+    [node.id, select, toggle]
+  )
+  const handleToggle = useCallback(() => toggleExpanded(node.id), [node.id, toggleExpanded])
+  const handleCheck = useCallback(() => toggle(node.id), [node.id, toggle])
 
-    folders.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-    files.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-
-    return [...folders, ...files];
-  }, [isFolder, node.children]);
+  const Icon = isFolder ? (isExpanded ? VscFolderOpened : VscFolder) : VscFile
 
   return (
-    <div
-      role="treeitem"
-      aria-expanded={isFolder ? isExpanded : undefined}
-      aria-selected={isSelected}
-      className="w-full"
-    >
+    <div>
       <div
-        onClick={handleRowClick}
-        style={{ paddingLeft: `${depth * 16 + 6}px` }}
-        className={`group flex items-center h-6 w-full cursor-pointer select-none text-xs text-ink hover:bg-surface-hover border-l-2 ${
-          isSelected
-            ? 'bg-accent-soft text-ink font-medium border-accent'
-            : 'border-transparent'
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-expanded={isFolder ? isExpanded : undefined}
+        aria-selected={isSelected}
+        className={`group relative flex items-center gap-1 pr-2 text-sm leading-6 ${
+          isSelected || isChecked ? 'bg-accent-soft' : 'hover:bg-surface-hover'
         }`}
+        style={{ paddingLeft: depth * 12 + 4 }}
       >
+        {isSelected && <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-accent" />}
+
         {isFolder ? (
           <button
             type="button"
-            aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
-            onClick={handleChevronClick}
-            className="flex items-center justify-center w-4 h-4 mr-1 text-ink-muted hover:text-ink focus:outline-none rounded shrink-0"
+            onClick={handleToggle}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded text-ink-muted hover:text-ink"
           >
-            {isExpanded ? (
-              <VscChevronDown className="w-3.5 h-3.5" />
-            ) : (
-              <VscChevronRight className="w-3.5 h-3.5" />
-            )}
+            {isExpanded ? <VscChevronDown size={14} /> : <VscChevronRight size={14} />}
           </button>
         ) : (
-          <span className="w-4 h-4 mr-1 shrink-0" aria-hidden="true" />
+          <span aria-hidden="true" className="h-5 w-5 shrink-0" />
+        )}
+
+        {!isRoot && (
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={handleCheck}
+            aria-label={`Select ${node.name}`}
+            className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+          />
         )}
 
         <button
           type="button"
-          onClick={handleRowClick}
-          className="flex items-center flex-1 min-w-0 text-left text-inherit focus:outline-none rounded px-0.5 truncate"
+          onClick={handleSelect}
+          className="flex min-w-0 flex-1 items-center gap-1.5 py-0.5 text-left text-ink"
         >
-          <span className="mr-1.5 shrink-0">
-            {isFolder ? (
-              isExpanded ? (
-                <VscFolderOpened className="w-4 h-4 text-accent" />
-              ) : (
-                <VscFolder className="w-4 h-4 text-accent" />
-              )
-            ) : (
-              <VscFile className="w-4 h-4 text-ink-muted" />
-            )}
-          </span>
+          <Icon size={16} className={isFolder ? 'shrink-0 text-accent' : 'shrink-0 text-ink-muted'} />
           <span className="truncate">{node.name}</span>
         </button>
       </div>
 
       {isFolder && isExpanded && (
         <div role="group">
-          {sortedChildren.length === 0 ? (
-            <div
-              style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
-              className="h-6 flex items-center text-xs text-ink-muted italic select-none"
-            >
+          {children.length === 0 ? (
+            <p className="py-0.5 text-xs text-ink-muted" style={{ paddingLeft: (depth + 1) * 12 + 28 }}>
               Empty
-            </div>
+            </p>
           ) : (
-            sortedChildren.map((child) => (
-              <TreeNode key={child.id} node={child} depth={depth + 1} />
-            ))
+            children.map((child) => <TreeNode key={child.id} node={child} depth={depth + 1} />)
           )}
         </div>
       )}
     </div>
-  );
-});
+  )
+}
+
+export const TreeNode = memo(TreeNodeBase)
+export default TreeNode

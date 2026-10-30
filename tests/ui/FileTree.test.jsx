@@ -1,6 +1,7 @@
 import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import { ExplorerProvider } from '../../src/context/ExplorerContext.jsx';
 import { UiStateProvider } from '../../src/context/UiStateContext.jsx';
+import { MultiSelectProvider } from '../../src/context/MultiSelectContext.jsx';
 import { ThemeProvider, useTheme } from '../../src/context/ThemeContext.jsx';
 import { FileTree } from '../../src/components/FileTree/FileTree.jsx';
 import { FileExplorer } from '../../src/sdk/FileExplorer.js';
@@ -10,12 +11,19 @@ function renderTree(explorer = new FileExplorer()) {
     <ThemeProvider>
       <ExplorerProvider explorer={explorer}>
         <UiStateProvider>
-          <FileTree />
+          <MultiSelectProvider>
+            <FileTree />
+          </MultiSelectProvider>
         </UiStateProvider>
       </ExplorerProvider>
     </ThemeProvider>
   );
 }
+
+const renderLogs = (spy) =>
+  spy.mock.calls
+    .map((call) => call[0])
+    .filter((msg) => typeof msg === 'string' && msg.startsWith('render TreeNode:'));
 
 describe('FileTree', () => {
   it('renders the seeded tree: My Files expanded, Documents and Images visible but collapsed, and Notes.txt', () => {
@@ -32,24 +40,22 @@ describe('FileTree', () => {
     expect(screen.queryByText('Photo.png')).not.toBeInTheDocument();
   });
 
-  it('clicking a folder chevron shows its children, and clicking again hides them', async () => {
+  it('clicking a folder chevron shows its children, and clicking again hides them', () => {
     const explorer = new FileExplorer();
     renderTree(explorer);
 
     const docsItem = screen.getByText('Documents').closest('[role="treeitem"]');
-    const expandButton = within(docsItem).getByRole('button', { name: /expand folder/i });
 
-    await fireEvent.click(expandButton);
+    fireEvent.click(within(docsItem).getByRole('button', { name: 'Expand Documents' }));
     expect(screen.getByText('Resume.pdf')).toBeInTheDocument();
     expect(screen.getByText('Project Plan.docx')).toBeInTheDocument();
 
-    const collapseButton = within(docsItem).getByRole('button', { name: /collapse folder/i });
-    await fireEvent.click(collapseButton);
+    fireEvent.click(within(docsItem).getByRole('button', { name: 'Collapse Documents' }));
     expect(screen.queryByText('Resume.pdf')).not.toBeInTheDocument();
     expect(screen.queryByText('Project Plan.docx')).not.toBeInTheDocument();
   });
 
-  it('clicking a row selects it and sets aria-selected to true on that row only', async () => {
+  it('clicking a row selects it and sets aria-selected to true on that row only', () => {
     const explorer = new FileExplorer();
     renderTree(explorer);
 
@@ -59,11 +65,11 @@ describe('FileTree', () => {
     expect(notesItem).toHaveAttribute('aria-selected', 'false');
     expect(docsItem).toHaveAttribute('aria-selected', 'false');
 
-    await fireEvent.click(screen.getByText('Notes.txt'));
+    fireEvent.click(screen.getByText('Notes.txt'));
     expect(notesItem).toHaveAttribute('aria-selected', 'true');
     expect(docsItem).toHaveAttribute('aria-selected', 'false');
 
-    await fireEvent.click(screen.getByText('Documents'));
+    fireEvent.click(screen.getByText('Documents'));
     expect(docsItem).toHaveAttribute('aria-selected', 'true');
     expect(notesItem).toHaveAttribute('aria-selected', 'false');
   });
@@ -96,7 +102,7 @@ describe('FileTree', () => {
     ]);
   });
 
-  it('an expanded empty folder shows the "Empty" text', async () => {
+  it('an expanded empty folder shows the "Empty" text', () => {
     const explorer = new FileExplorer();
     const root = explorer.getTree();
     explorer.createFolder(root.id, 'EmptyFolder');
@@ -104,9 +110,8 @@ describe('FileTree', () => {
     renderTree(explorer);
 
     const folderItem = screen.getByText('EmptyFolder').closest('[role="treeitem"]');
-    const chevronButton = within(folderItem).getByRole('button', { name: /expand folder/i });
+    fireEvent.click(within(folderItem).getByRole('button', { name: 'Expand EmptyFolder' }));
 
-    await fireEvent.click(chevronButton);
     expect(screen.getByText('Empty')).toBeInTheDocument();
   });
 
@@ -151,7 +156,34 @@ describe('FileTree', () => {
     expect(notesItem).not.toHaveAttribute('aria-expanded');
   });
 
-  it('maintains targeted re-renders observed via console.log', async () => {
+  it('ticking a checkbox checks the row without changing the selected row', () => {
+    const explorer = new FileExplorer();
+    renderTree(explorer);
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Select Notes.txt' });
+    fireEvent.click(checkbox);
+
+    expect(checkbox).toBeChecked();
+    const notesItem = screen.getByText('Notes.txt').closest('[role="treeitem"]');
+    expect(notesItem).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('ctrl+click toggles the checkbox, and the root has no checkbox', () => {
+    const explorer = new FileExplorer();
+    renderTree(explorer);
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Select Notes.txt' });
+
+    fireEvent.click(screen.getByText('Notes.txt'), { ctrlKey: true });
+    expect(checkbox).toBeChecked();
+
+    fireEvent.click(screen.getByText('Notes.txt'), { ctrlKey: true });
+    expect(checkbox).not.toBeChecked();
+
+    expect(screen.queryByRole('checkbox', { name: 'Select My Files' })).not.toBeInTheDocument();
+  });
+
+  it('maintains targeted re-renders observed via console.log', () => {
     const explorer = new FileExplorer();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -166,7 +198,9 @@ describe('FileTree', () => {
         <ThemeCapture />
         <ExplorerProvider explorer={explorer}>
           <UiStateProvider>
-            <FileTree />
+            <MultiSelectProvider>
+              <FileTree />
+            </MultiSelectProvider>
           </UiStateProvider>
         </ExplorerProvider>
       </ThemeProvider>
@@ -175,54 +209,61 @@ describe('FileTree', () => {
     expect(logSpy).toHaveBeenCalled();
     logSpy.mockClear();
 
-    // 1. Expanding 'Documents' logs only 'Documents' and its newly shown children
+    // expanding Documents logs only Documents and its newly shown children
     const docsItem = screen.getByText('Documents').closest('[role="treeitem"]');
-    const expandButton = within(docsItem).getByRole('button', { name: /expand folder/i });
-    await fireEvent.click(expandButton);
-
-    const expandLogs = logSpy.mock.calls
-      .map((call) => call[0])
-      .filter((msg) => typeof msg === 'string' && msg.startsWith('render TreeNode:'));
-
-    expect(expandLogs).toEqual([
+    fireEvent.click(within(docsItem).getByRole('button', { name: 'Expand Documents' }));
+    expect(renderLogs(logSpy)).toEqual([
       'render TreeNode: Documents',
       'render TreeNode: Project Plan.docx',
       'render TreeNode: Resume.pdf',
     ]);
     logSpy.mockClear();
 
-    // 2. Selecting 'Notes.txt' logs only 'Notes.txt'
-    await fireEvent.click(screen.getByText('Notes.txt'));
-    const selectFirstLogs = logSpy.mock.calls
-      .map((call) => call[0])
-      .filter((msg) => typeof msg === 'string' && msg.startsWith('render TreeNode:'));
-
-    expect(selectFirstLogs).toEqual(['render TreeNode: Notes.txt']);
+    // selecting Notes.txt logs only Notes.txt
+    fireEvent.click(screen.getByText('Notes.txt'));
+    expect(renderLogs(logSpy)).toEqual(['render TreeNode: Notes.txt']);
     logSpy.mockClear();
 
-    // 3. Selecting 'Images' logs only previous selection ('Notes.txt') and new ('Images')
-    await fireEvent.click(screen.getByText('Images'));
-    const selectSecondLogs = logSpy.mock.calls
-      .map((call) => call[0])
-      .filter((msg) => typeof msg === 'string' && msg.startsWith('render TreeNode:'))
-      .sort();
-
-    expect(selectSecondLogs).toEqual([
+    // selecting Images logs the previous selection and the new one
+    fireEvent.click(screen.getByText('Images'));
+    expect(renderLogs(logSpy).sort()).toEqual([
       'render TreeNode: Images',
       'render TreeNode: Notes.txt',
     ]);
     logSpy.mockClear();
 
-    // 4. Toggling the theme does not log any TreeNode render
+    // toggling the theme does not render any tree node
     act(() => {
       themeContext.toggleTheme();
     });
+    expect(renderLogs(logSpy)).toHaveLength(0);
 
-    const themeToggleLogs = logSpy.mock.calls
-      .map((call) => call[0])
-      .filter((msg) => typeof msg === 'string' && msg.startsWith('render TreeNode:'));
+    logSpy.mockRestore();
+  });
 
-    expect(themeToggleLogs).toHaveLength(0);
+  it('structural sharing: a data change re-renders only the changed branch', () => {
+    const explorer = new FileExplorer();
+    const root = explorer.getTree();
+    const notes = root.children.find((c) => c.name === 'Notes.txt');
+    const images = root.children.find((c) => c.name === 'Images');
+
+    renderTree(explorer);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    act(() => {
+      explorer.renameItem(notes.id, 'Todo.txt');
+    });
+    expect(renderLogs(logSpy).sort()).toEqual([
+      'render TreeNode: My Files',
+      'render TreeNode: Todo.txt',
+    ]);
+    logSpy.mockClear();
+
+    act(() => {
+      explorer.deleteItem(images.id);
+    });
+    expect(renderLogs(logSpy)).toEqual(['render TreeNode: My Files']);
 
     logSpy.mockRestore();
   });

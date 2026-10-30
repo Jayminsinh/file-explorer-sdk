@@ -1,18 +1,17 @@
-import { useFileExplorerTree } from '../../hooks/useFileExplorer.js';
-import { TreeNode } from './TreeNode.jsx';
+import { memo } from 'react'
+import { useFileExplorerTree } from '../../hooks/useFileExplorer'
+import { TreeNode } from './TreeNode'
 
-export function FileTree() {
-  const rootNode = useFileExplorerTree();
 
-  if (!rootNode) return null;
+function FileTreeBase() {
+  const tree = useFileExplorerTree()
 
   return (
-    <div
-      role="tree"
-      aria-label="File Explorer"
-      className="w-full text-ink select-none py-1"
-    >
-      <TreeNode node={rootNode} depth={0} />
+    <div role="tree" aria-label="Files" aria-multiselectable="true" className="py-1 text-ink">
+      <TreeNode node={tree} depth={0} />
     </div>
-  );
+  )
 }
+
+export const FileTree = memo(FileTreeBase)
+export default FileTree

@@ -3,6 +3,7 @@ import { ThemeProvider } from '../../src/context/ThemeContext.jsx';
 import { ExplorerProvider } from '../../src/context/ExplorerContext.jsx';
 import { FeedbackProvider } from '../../src/context/FeedbackContext.jsx';
 import { UiStateProvider } from '../../src/context/UiStateContext.jsx';
+import { MultiSelectProvider } from '../../src/context/MultiSelectContext.jsx';
 import { FileExplorer } from '../../src/sdk/FileExplorer.js';
 
 export function createWrapper(explorer = new FileExplorer()) {
@@ -12,7 +13,9 @@ export function createWrapper(explorer = new FileExplorer()) {
         <ExplorerProvider explorer={explorer}>
           <FeedbackProvider>
             <UiStateProvider>
-              {children}
+              <MultiSelectProvider>
+                {children}
+              </MultiSelectProvider>
             </UiStateProvider>
           </FeedbackProvider>
         </ExplorerProvider>

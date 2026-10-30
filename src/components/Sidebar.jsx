@@ -3,6 +3,7 @@ import { Toolbar } from './Toolbar/Toolbar'
 import SearchBar from './Search/SearchBar'
 import SearchResults from './Search/SearchResults'
 import { useSearch } from '../hooks/useSearch'
+import SelectionBar from './SelectionBar'
 
 function Sidebar() {
   const { query, setQuery, activeQuery, filters, setFilters, setPage, result, isSearching } = useSearch()
@@ -14,6 +15,7 @@ function Sidebar() {
         <Toolbar />
       </div>
       <SearchBar query={query} onQueryChange={setQuery} filters={filters} onFiltersChange={setFilters} />
+      <SelectionBar />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isSearching ? (
           <SearchResults result={result} query={activeQuery} onPageChange={setPage} />

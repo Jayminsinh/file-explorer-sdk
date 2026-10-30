@@ -7,17 +7,20 @@ import { ExplorerProvider } from './context/ExplorerContext'
 import { UiStateProvider } from './context/UiStateContext'
 import { FeedbackProvider } from './context/FeedbackContext'
 import { ActivityProvider } from './context/ActivityContext'
+import { MultiSelectProvider } from './context/MultiSelectContext'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
       <ExplorerProvider>
-        <UiStateProvider>
-          <FeedbackProvider>
-            <ActivityProvider>
-              <App />
-            </ActivityProvider>
-          </FeedbackProvider>
+       <UiStateProvider>
+          <MultiSelectProvider>
+            <FeedbackProvider>
+              <ActivityProvider>
+                <App />
+              </ActivityProvider>
+            </FeedbackProvider>
+          </MultiSelectProvider>
         </UiStateProvider>
       </ExplorerProvider>
     </ThemeProvider>
