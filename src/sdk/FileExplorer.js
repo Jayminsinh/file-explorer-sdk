@@ -313,4 +313,53 @@ export class FileExplorer {
       parentId: item.parentId,
     };
   }
+
+  #removeSubtree(id) {
+    const item = this.#nodes.get(id);
+    const parentId = item.parentId;
+    const parent = this.#nodes.get(parentId);
+    const index = parent && parent.childIds ? parent.childIds.indexOf(id) : -1;
+
+    if (parent && index !== -1) {
+      parent.childIds.splice(index, 1);
+    }
+
+    const removedNodes = [];
+    const queue = [id];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      const node = this.#nodes.get(currentId);
+      if (node) {
+        removedNodes.push({ ...node, childIds: node.childIds ? [...node.childIds] : undefined });
+        if (node.type === 'folder' && node.childIds) {
+          queue.push(...node.childIds);
+        }
+        this.#nodes.delete(currentId);
+      }
+    }
+
+    return {
+      nodes: removedNodes,
+      parentId,
+      index,
+    };
+  }
+
+  deleteItem(id) {
+    const item = this.#nodes.get(id);
+    if (!item) {
+      throw new ItemNotFoundError(id);
+    }
+    if (id === this.#rootId || item.parentId === null) {
+      throw new CannotModifyRootError('delete');
+    }
+
+    const deletedTree = this.#buildTree(id);
+    this.#removeSubtree(id);
+
+    this.#notifyChange();
+
+    return deletedTree;
+  }
 }
