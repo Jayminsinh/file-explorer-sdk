@@ -76,7 +76,7 @@ export const Toolbar = memo(function Toolbar() {
 
   return (
     <>
-      <div className="flex items-center gap-0.5">
+      <div role="toolbar" aria-label="Explorer actions" className="flex items-center gap-0.5">
         <button
           type="button"
           title="New File"

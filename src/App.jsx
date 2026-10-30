@@ -1,38 +1,33 @@
-import { FileTree } from './components/FileTree/FileTree.jsx';
-import { ThemeToggle } from './components/ThemeToggle.jsx';
-import { ErrorBanner } from './components/ErrorBanner.jsx';
-import { Toolbar } from './components/Toolbar/Toolbar.jsx';
+import ActivityPanel from './components/ActivityPanel'
+import DetailsPanel from './components/DetailsPanel'
+import { ErrorBanner } from './components/ErrorBanner.jsx'
+import Sidebar from './components/Sidebar'
+import { ThemeToggle } from './components/ThemeToggle.jsx'
+import UndoRedoControls from './components/UndoRedoControls'
+import { useUndoRedoShortcuts } from './hooks/useUndoRedoShortcuts'
 
 function App() {
+  useUndoRedoShortcuts()
+
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-canvas text-ink">
-      <header className="h-10 px-4 flex items-center justify-between border-b border-line bg-surface shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-ink">File Explorer</span>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="flex h-screen flex-col bg-canvas text-ink">
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-line bg-surface px-3">
+        <h1 className="text-sm font-semibold">File Explorer</h1>
+        <div className="flex items-center gap-1">
+          <UndoRedoControls />
           <ThemeToggle />
         </div>
       </header>
       <ErrorBanner />
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 shrink-0 border-r border-line bg-surface flex flex-col">
-          <div className="h-8 px-3 flex items-center justify-between border-b border-line">
-            <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-              Explorer
-            </span>
-            <Toolbar />
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            <FileTree />
-          </div>
-        </aside>
-        <main className="flex-1 overflow-auto bg-canvas p-6">
-          {/* Main content */}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <Sidebar />
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <DetailsPanel />
+          <ActivityPanel />
         </main>
       </div>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
