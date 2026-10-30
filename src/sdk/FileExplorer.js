@@ -5,6 +5,7 @@ import {
   DuplicateNameError,
   CannotModifyRootError,
   CannotMoveIntoDescendantError,
+  TransactionFailedError,
 } from './errors.js';
 import { EventEmitter } from './emitter.js';
 import { History } from './history.js';
@@ -21,12 +22,42 @@ function deepFreeze(obj) {
   return obj;
 }
 
+function cloneNodes(nodes) {
+  const copy = new Map();
+  for (const [id, node] of nodes) {
+    const cloned = { ...node };
+    if (node.childIds) {
+      cloned.childIds = [...node.childIds];
+    }
+    copy.set(id, cloned);
+  }
+  return copy;
+}
+
+function areNodesEqual(nodesA, nodesB) {
+  if (nodesA.size !== nodesB.size) return false;
+  for (const [id, a] of nodesA) {
+    const b = nodesB.get(id);
+    if (!b) return false;
+    if (a.name !== b.name || a.type !== b.type || a.parentId !== b.parentId) return false;
+    if (a.childIds || b.childIds) {
+      if (!a.childIds || !b.childIds) return false;
+      if (a.childIds.length !== b.childIds.length) return false;
+      for (let i = 0; i < a.childIds.length; i++) {
+        if (a.childIds[i] !== b.childIds[i]) return false;
+      }
+    }
+  }
+  return true;
+}
+
 export class FileExplorer {
   #nodes = new Map();
   #rootId;
   #emitter = new EventEmitter();
   #cachedSnapshot = null;
   #history = new History();
+  #inTransaction = false;
 
   constructor() {
     const rootId = crypto.randomUUID();
@@ -100,8 +131,8 @@ export class FileExplorer {
     });
   }
 
-  #buildTree(id) {
-    const node = this.#nodes.get(id);
+  #buildTree(id, nodes = this.#nodes) {
+    const node = nodes.get(id);
     if (!node) return null;
 
     if (node.type === 'folder') {
@@ -110,7 +141,7 @@ export class FileExplorer {
         name: node.name,
         type: node.type,
         parentId: node.parentId,
-        children: node.childIds.map((childId) => this.#buildTree(childId)),
+        children: node.childIds.map((childId) => this.#buildTree(childId, nodes)),
       };
     }
 
@@ -122,7 +153,6 @@ export class FileExplorer {
     };
   }
 
-  // To be called by future mutation methods
   #notifyChange() {
     this.#cachedSnapshot = null;
     this.#emitter.emit(this.getSnapshot());
@@ -168,22 +198,22 @@ export class FileExplorer {
     return trimmed;
   }
 
-  #checkDuplicateName(parentId, name, excludeId = null) {
-    const parent = this.#nodes.get(parentId);
+  #checkDuplicateName(nodes, parentId, name, excludeId = null) {
+    const parent = nodes.get(parentId);
     if (!parent || !parent.childIds) return;
 
     const lower = name.toLowerCase();
     for (const childId of parent.childIds) {
       if (excludeId && childId === excludeId) continue;
-      const child = this.#nodes.get(childId);
+      const child = nodes.get(childId);
       if (child && child.name.toLowerCase() === lower) {
         throw new DuplicateNameError(name, parentId);
       }
     }
   }
 
-  #createItem(parentId, name, type) {
-    const parent = this.#nodes.get(parentId);
+  #applyCreate(nodes, parentId, name, type) {
+    const parent = nodes.get(parentId);
     if (!parent) {
       throw new ItemNotFoundError(parentId);
     }
@@ -192,7 +222,7 @@ export class FileExplorer {
     }
 
     const trimmedName = this.#validateName(name);
-    this.#checkDuplicateName(parentId, trimmedName);
+    this.#checkDuplicateName(nodes, parentId, trimmedName);
 
     const id = crypto.randomUUID();
     const node = {
@@ -206,43 +236,48 @@ export class FileExplorer {
       node.childIds = [];
     }
 
-    this.#nodes.set(id, node);
+    nodes.set(id, node);
     const index = parent.childIds.length;
     parent.childIds.push(id);
 
-    this.#history.push({
-      type: 'create',
-      node: {
+    return {
+      item: {
         id: node.id,
         name: node.name,
         type: node.type,
         parentId: node.parentId,
-        childIds: node.childIds ? [...node.childIds] : undefined,
       },
-      parentId,
-      index,
-    });
-
-    this.#notifyChange();
-
-    return {
-      id: node.id,
-      name: node.name,
-      type: node.type,
-      parentId: node.parentId,
+      entry: {
+        type: 'create',
+        node: {
+          id: node.id,
+          name: node.name,
+          type: node.type,
+          parentId: node.parentId,
+          childIds: node.childIds ? [...node.childIds] : undefined,
+        },
+        parentId,
+        index,
+      },
     };
   }
 
   createFile(parentId, name) {
-    return this.#createItem(parentId, name, 'file');
+    const { item, entry } = this.#applyCreate(this.#nodes, parentId, name, 'file');
+    this.#history.push(entry);
+    this.#notifyChange();
+    return item;
   }
 
   createFolder(parentId, name) {
-    return this.#createItem(parentId, name, 'folder');
+    const { item, entry } = this.#applyCreate(this.#nodes, parentId, name, 'folder');
+    this.#history.push(entry);
+    this.#notifyChange();
+    return item;
   }
 
-  renameItem(id, newName) {
-    const item = this.#nodes.get(id);
+  #applyRename(nodes, id, newName) {
+    const item = nodes.get(id);
     if (!item) {
       throw new ItemNotFoundError(id);
     }
@@ -253,37 +288,49 @@ export class FileExplorer {
     const trimmedName = this.#validateName(newName);
     if (trimmedName === item.name) {
       return {
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        parentId: item.parentId,
+        item: {
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          parentId: item.parentId,
+        },
+        changed: false,
       };
     }
 
-    this.#checkDuplicateName(item.parentId, trimmedName, id);
+    this.#checkDuplicateName(nodes, item.parentId, trimmedName, id);
 
     const oldName = item.name;
     item.name = trimmedName;
 
-    this.#history.push({
-      type: 'rename',
-      id,
-      oldName,
-      newName: trimmedName,
-    });
-
-    this.#notifyChange();
-
     return {
-      id: item.id,
-      name: item.name,
-      type: item.type,
-      parentId: item.parentId,
+      item: {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        parentId: item.parentId,
+      },
+      changed: true,
+      entry: {
+        type: 'rename',
+        id,
+        oldName,
+        newName: trimmedName,
+      },
     };
   }
 
-  moveItem(id, newParentId) {
-    const item = this.#nodes.get(id);
+  renameItem(id, newName) {
+    const { item, changed, entry } = this.#applyRename(this.#nodes, id, newName);
+    if (changed) {
+      this.#history.push(entry);
+      this.#notifyChange();
+    }
+    return item;
+  }
+
+  #applyMove(nodes, id, newParentId) {
+    const item = nodes.get(id);
     if (!item) {
       throw new ItemNotFoundError(id);
     }
@@ -291,7 +338,7 @@ export class FileExplorer {
       throw new CannotModifyRootError('move');
     }
 
-    const newParent = this.#nodes.get(newParentId);
+    const newParent = nodes.get(newParentId);
     if (!newParent) {
       throw new ItemNotFoundError(newParentId);
     }
@@ -301,10 +348,13 @@ export class FileExplorer {
 
     if (item.parentId === newParentId) {
       return {
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        parentId: item.parentId,
+        item: {
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          parentId: item.parentId,
+        },
+        changed: false,
       };
     }
 
@@ -315,14 +365,14 @@ export class FileExplorer {
         if (current.id === id) {
           throw new CannotMoveIntoDescendantError(id, newParentId);
         }
-        current = current.parentId ? this.#nodes.get(current.parentId) : null;
+        current = current.parentId ? nodes.get(current.parentId) : null;
       }
     }
 
-    this.#checkDuplicateName(newParentId, item.name);
+    this.#checkDuplicateName(nodes, newParentId, item.name);
 
     const oldParentId = item.parentId;
-    const oldParent = this.#nodes.get(oldParentId);
+    const oldParent = nodes.get(oldParentId);
     const oldIndex = oldParent && oldParent.childIds ? oldParent.childIds.indexOf(id) : -1;
 
     if (oldParent && oldParent.childIds && oldIndex !== -1) {
@@ -332,28 +382,37 @@ export class FileExplorer {
     newParent.childIds.push(id);
     item.parentId = newParentId;
 
-    this.#history.push({
-      type: 'move',
-      id,
-      oldParentId,
-      oldIndex,
-      newParentId,
-    });
-
-    this.#notifyChange();
-
     return {
-      id: item.id,
-      name: item.name,
-      type: item.type,
-      parentId: item.parentId,
+      item: {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        parentId: item.parentId,
+      },
+      changed: true,
+      entry: {
+        type: 'move',
+        id,
+        oldParentId,
+        oldIndex,
+        newParentId,
+      },
     };
   }
 
-  #removeSubtree(id) {
-    const item = this.#nodes.get(id);
+  moveItem(id, newParentId) {
+    const { item, changed, entry } = this.#applyMove(this.#nodes, id, newParentId);
+    if (changed) {
+      this.#history.push(entry);
+      this.#notifyChange();
+    }
+    return item;
+  }
+
+  #removeSubtree(id, nodes = this.#nodes) {
+    const item = nodes.get(id);
     const parentId = item.parentId;
-    const parent = this.#nodes.get(parentId);
+    const parent = nodes.get(parentId);
     const index = parent && parent.childIds ? parent.childIds.indexOf(id) : -1;
 
     if (parent && index !== -1) {
@@ -365,13 +424,13 @@ export class FileExplorer {
 
     while (queue.length > 0) {
       const currentId = queue.shift();
-      const node = this.#nodes.get(currentId);
+      const node = nodes.get(currentId);
       if (node) {
         removedNodes.push({ ...node, childIds: node.childIds ? [...node.childIds] : undefined });
         if (node.type === 'folder' && node.childIds) {
           queue.push(...node.childIds);
         }
-        this.#nodes.delete(currentId);
+        nodes.delete(currentId);
       }
     }
 
@@ -382,8 +441,8 @@ export class FileExplorer {
     };
   }
 
-  deleteItem(id) {
-    const item = this.#nodes.get(id);
+  #applyDelete(nodes, id) {
+    const item = nodes.get(id);
     if (!item) {
       throw new ItemNotFoundError(id);
     }
@@ -391,19 +450,98 @@ export class FileExplorer {
       throw new CannotModifyRootError('delete');
     }
 
-    const deletedTree = this.#buildTree(id);
-    const { nodes, parentId, index } = this.#removeSubtree(id);
+    const deletedTree = this.#buildTree(id, nodes);
+    const { nodes: removedNodes, parentId, index } = this.#removeSubtree(id, nodes);
 
+    return {
+      item: deletedTree,
+      changed: true,
+      entry: {
+        type: 'delete',
+        nodes: removedNodes,
+        parentId,
+        index,
+      },
+    };
+  }
+
+  deleteItem(id) {
+    const { item, entry } = this.#applyDelete(this.#nodes, id);
+    this.#history.push(entry);
+    this.#notifyChange();
+    return item;
+  }
+
+  transaction(callback) {
+    if (typeof callback !== 'function') {
+      throw new TransactionFailedError('callback must be a function');
+    }
+    if (this.#inTransaction) {
+      throw new TransactionFailedError('nested transactions are not supported');
+    }
+
+    this.#inTransaction = true;
+    const beforeCopy = cloneNodes(this.#nodes);
+    const workingNodes = cloneNodes(this.#nodes);
+    let hasChanges = false;
+
+    const tx = {
+      createFile: (parentId, name) => {
+        const { item } = this.#applyCreate(workingNodes, parentId, name, 'file');
+        hasChanges = true;
+        return item;
+      },
+      createFolder: (parentId, name) => {
+        const { item } = this.#applyCreate(workingNodes, parentId, name, 'folder');
+        hasChanges = true;
+        return item;
+      },
+      renameItem: (id, newName) => {
+        const { item, changed } = this.#applyRename(workingNodes, id, newName);
+        if (changed) hasChanges = true;
+        return item;
+      },
+      moveItem: (id, newParentId) => {
+        const { item, changed } = this.#applyMove(workingNodes, id, newParentId);
+        if (changed) hasChanges = true;
+        return item;
+      },
+      deleteItem: (id) => {
+        const { item } = this.#applyDelete(workingNodes, id);
+        hasChanges = true;
+        return item;
+      },
+    };
+
+    let result;
+    try {
+      result = callback(tx);
+      if (result && typeof result.then === 'function') {
+        throw new TransactionFailedError('async callbacks are not supported');
+      }
+    } catch (err) {
+      if (err instanceof TransactionFailedError) {
+        throw err;
+      }
+      const message = err instanceof Error ? err.message : String(err || 'operation failed');
+      throw new TransactionFailedError(message, err);
+    } finally {
+      this.#inTransaction = false;
+    }
+
+    if (!hasChanges || areNodesEqual(beforeCopy, workingNodes)) {
+      return result;
+    }
+
+    this.#nodes = workingNodes;
     this.#history.push({
-      type: 'delete',
-      nodes,
-      parentId,
-      index,
+      type: 'transaction',
+      before: beforeCopy,
+      after: cloneNodes(workingNodes),
     });
-
     this.#notifyChange();
 
-    return deletedTree;
+    return result;
   }
 
   undo() {
@@ -492,6 +630,15 @@ export class FileExplorer {
           type: 'delete',
           id: rootDeletedId,
           name: entry.nodes[0].name,
+        };
+        break;
+      }
+
+      case 'transaction': {
+        this.#nodes = cloneNodes(entry.before);
+        description = {
+          action: 'transaction',
+          type: 'transaction',
         };
         break;
       }
@@ -586,6 +733,15 @@ export class FileExplorer {
           type: 'delete',
           id: rootDeletedId,
           name: entry.nodes[0].name,
+        };
+        break;
+      }
+
+      case 'transaction': {
+        this.#nodes = cloneNodes(entry.after);
+        description = {
+          action: 'transaction',
+          type: 'transaction',
         };
         break;
       }

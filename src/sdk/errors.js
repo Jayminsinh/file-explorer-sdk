@@ -117,15 +117,17 @@ export class NothingToRedoError extends FileExplorerError {
 }
 
 export class TransactionFailedError extends FileExplorerError {
-  constructor(reason = 'operation failed') {
+  constructor(reason = 'operation failed', cause) {
+    const errorCause = cause || (reason instanceof Error ? reason : undefined);
     const message = reason instanceof Error ? reason.message : reason;
+    const cleanMessage = typeof message === 'string' && message.endsWith('.') ? message.slice(0, -1) : message;
     super(
       ERROR_CODES.TRANSACTION_FAILED,
-      `Transaction failed: ${message}.`
+      `Transaction failed: ${cleanMessage}.`
     );
     this.name = 'TransactionFailedError';
-    if (reason instanceof Error) {
-      this.cause = reason;
+    if (errorCause) {
+      this.cause = errorCause;
     }
   }
 }
