@@ -55,9 +55,11 @@ export const TreeNode = memo(function TreeNode({ node, depth = 0 }) {
     >
       <div
         onClick={handleRowClick}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
-        className={`group flex items-center h-6 w-full cursor-pointer select-none text-xs text-neutral-300 hover:bg-neutral-800/80 ${
-          isSelected ? 'bg-blue-600/25 text-white font-medium' : ''
+        style={{ paddingLeft: `${depth * 16 + 6}px` }}
+        className={`group flex items-center h-6 w-full cursor-pointer select-none text-xs text-ink hover:bg-surface-hover border-l-2 ${
+          isSelected
+            ? 'bg-accent-soft text-ink font-medium border-accent'
+            : 'border-transparent'
         }`}
       >
         {isFolder ? (
@@ -65,7 +67,7 @@ export const TreeNode = memo(function TreeNode({ node, depth = 0 }) {
             type="button"
             aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
             onClick={handleChevronClick}
-            className="flex items-center justify-center w-4 h-4 mr-1 text-neutral-400 hover:text-neutral-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded shrink-0"
+            className="flex items-center justify-center w-4 h-4 mr-1 text-ink-muted hover:text-ink focus:outline-none rounded shrink-0"
           >
             {isExpanded ? (
               <VscChevronDown className="w-3.5 h-3.5" />
@@ -80,17 +82,17 @@ export const TreeNode = memo(function TreeNode({ node, depth = 0 }) {
         <button
           type="button"
           onClick={handleRowClick}
-          className="flex items-center flex-1 min-w-0 text-left text-inherit focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded px-0.5 truncate"
+          className="flex items-center flex-1 min-w-0 text-left text-inherit focus:outline-none rounded px-0.5 truncate"
         >
-          <span className="mr-1.5 shrink-0 text-neutral-400">
+          <span className="mr-1.5 shrink-0">
             {isFolder ? (
               isExpanded ? (
-                <VscFolderOpened className="w-4 h-4 text-blue-400" />
+                <VscFolderOpened className="w-4 h-4 text-accent" />
               ) : (
-                <VscFolder className="w-4 h-4 text-blue-400" />
+                <VscFolder className="w-4 h-4 text-accent" />
               )
             ) : (
-              <VscFile className="w-4 h-4 text-neutral-400" />
+              <VscFile className="w-4 h-4 text-ink-muted" />
             )}
           </span>
           <span className="truncate">{node.name}</span>
@@ -102,7 +104,7 @@ export const TreeNode = memo(function TreeNode({ node, depth = 0 }) {
           {sortedChildren.length === 0 ? (
             <div
               style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
-              className="h-6 flex items-center text-xs text-neutral-500 italic select-none"
+              className="h-6 flex items-center text-xs text-ink-muted italic select-none"
             >
               Empty
             </div>

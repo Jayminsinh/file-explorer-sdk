@@ -10,7 +10,7 @@ export function FileTree() {
     <div
       role="tree"
       aria-label="File Explorer"
-      className="w-full select-none py-1"
+      className="w-full text-ink select-none py-1"
     >
       <TreeNode node={rootNode} depth={0} />
     </div>
