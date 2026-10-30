@@ -10,6 +10,7 @@
   --color-ink-muted: #6b7079;
   --color-accent: #2f5fd0;
   --color-accent-soft: #e8eefc;
+  --color-on-accent: #ffffff;
   --color-danger: #c6392f;
 }
 
@@ -23,6 +24,7 @@
   --color-ink-muted: #8c93a0;
   --color-accent: #7aa2f7;
   --color-accent-soft: #1c2640;
+  --color-on-accent: #0e1014;
   --color-danger: #f0716a;
 }
 
@@ -35,6 +37,7 @@
   --color-ink-muted: var(--color-ink-muted);
   --color-accent: var(--color-accent);
   --color-accent-soft: var(--color-accent-soft);
+  --color-on-accent: var(--color-on-accent);
   --color-danger: var(--color-danger);
 }
 
