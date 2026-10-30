@@ -1,20 +1,22 @@
 import { memo, useState } from 'react';
-import { VscNewFile, VscNewFolder, VscRename } from 'react-icons/vsc';
+import { VscNewFile, VscNewFolder, VscRename, VscMove, VscTrash } from 'react-icons/vsc';
 import { useSelectedItem } from '../../hooks/useSelectedItem.js';
 import { useFileExplorerTree } from '../../hooks/useFileExplorer.js';
 import { useExplorerActions } from '../../hooks/useExplorerActions.js';
 import { useUiActions } from '../../context/UiStateContext.jsx';
 import { NameDialog } from '../Dialogs/NameDialog.jsx';
+import { MoveDialog } from '../Dialogs/MoveDialog.jsx';
+import { ConfirmDeleteDialog } from '../Dialogs/ConfirmDeleteDialog.jsx';
 
 export const Toolbar = memo(function Toolbar() {
   const selectedItem = useSelectedItem();
   const tree = useFileExplorerTree();
-  const { createFile, createFolder, renameItem } = useExplorerActions();
+  const { createFile, createFolder, renameItem, moveItem, deleteItem } = useExplorerActions();
   const { setExpanded } = useUiActions();
 
   const [dialogType, setDialogType] = useState(null);
 
-  const isRenameDisabled = !selectedItem || selectedItem.id === tree?.id;
+  const isItemActionDisabled = !selectedItem || selectedItem.id === tree?.id;
 
   const getTargetFolderId = () => {
     if (!selectedItem) {
@@ -51,6 +53,24 @@ export const Toolbar = memo(function Toolbar() {
     return renameItem(selectedItem.id, name);
   };
 
+  const handleMove = async (targetFolderId) => {
+    if (!selectedItem) {
+      return { ok: false, error: new Error('No item selected') };
+    }
+    const result = await moveItem(selectedItem.id, targetFolderId);
+    if (result?.ok && targetFolderId) {
+      setExpanded(targetFolderId, true);
+    }
+    return result;
+  };
+
+  const handleDelete = async () => {
+    if (!selectedItem) {
+      return { ok: false, error: new Error('No item selected') };
+    }
+    return deleteItem(selectedItem.id);
+  };
+
   const buttonClass =
     'flex items-center justify-center w-6 h-6 rounded text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted disabled:cursor-not-allowed';
 
@@ -79,13 +99,32 @@ export const Toolbar = memo(function Toolbar() {
           type="button"
           title="Rename"
           aria-label="Rename"
-          disabled={isRenameDisabled}
+          disabled={isItemActionDisabled}
           onClick={() => setDialogType('rename')}
           className={buttonClass}
         >
           <VscRename className="w-4 h-4" />
         </button>
-        {/* Space for future Move and Delete actions */}
+        <button
+          type="button"
+          title="Move"
+          aria-label="Move"
+          disabled={isItemActionDisabled}
+          onClick={() => setDialogType('move')}
+          className={buttonClass}
+        >
+          <VscMove className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          title="Delete"
+          aria-label="Delete"
+          disabled={isItemActionDisabled}
+          onClick={() => setDialogType('delete')}
+          className={buttonClass}
+        >
+          <VscTrash className="w-4 h-4" />
+        </button>
       </div>
 
       {dialogType === 'newFile' && (
@@ -113,6 +152,21 @@ export const Toolbar = memo(function Toolbar() {
           onClose={() => setDialogType(null)}
         />
       )}
+      {dialogType === 'move' && selectedItem && (
+        <MoveDialog
+          item={selectedItem}
+          onSubmit={handleMove}
+          onClose={() => setDialogType(null)}
+        />
+      )}
+      {dialogType === 'delete' && selectedItem && (
+        <ConfirmDeleteDialog
+          item={selectedItem}
+          onConfirm={handleDelete}
+          onClose={() => setDialogType(null)}
+        />
+      )}
     </>
   );
 });
+
