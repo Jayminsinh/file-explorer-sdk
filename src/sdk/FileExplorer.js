@@ -4,6 +4,7 @@ import {
   InvalidNameError,
   DuplicateNameError,
   CannotModifyRootError,
+  CannotMoveIntoDescendantError,
 } from './errors.js';
 import { EventEmitter } from './emitter.js';
 
@@ -245,6 +246,63 @@ export class FileExplorer {
     this.#checkDuplicateName(item.parentId, trimmedName, id);
 
     item.name = trimmedName;
+
+    this.#notifyChange();
+
+    return {
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      parentId: item.parentId,
+    };
+  }
+
+  moveItem(id, newParentId) {
+    const item = this.#nodes.get(id);
+    if (!item) {
+      throw new ItemNotFoundError(id);
+    }
+    if (id === this.#rootId || item.parentId === null) {
+      throw new CannotModifyRootError('move');
+    }
+
+    const newParent = this.#nodes.get(newParentId);
+    if (!newParent) {
+      throw new ItemNotFoundError(newParentId);
+    }
+    if (newParent.type !== 'folder') {
+      throw new ParentNotAFolderError(newParentId);
+    }
+
+    if (item.parentId === newParentId) {
+      return {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        parentId: item.parentId,
+      };
+    }
+
+    // A folder cannot be moved into itself or into any of its descendants
+    if (item.type === 'folder') {
+      let current = newParent;
+      while (current) {
+        if (current.id === id) {
+          throw new CannotMoveIntoDescendantError(id, newParentId);
+        }
+        current = current.parentId ? this.#nodes.get(current.parentId) : null;
+      }
+    }
+
+    this.#checkDuplicateName(newParentId, item.name);
+
+    const oldParent = this.#nodes.get(item.parentId);
+    if (oldParent && oldParent.childIds) {
+      oldParent.childIds = oldParent.childIds.filter((childId) => childId !== id);
+    }
+
+    newParent.childIds.push(id);
+    item.parentId = newParentId;
 
     this.#notifyChange();
 
