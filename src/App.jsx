@@ -1,14 +1,19 @@
-import { useFileExplorerTree } from './hooks/useFileExplorer.js';
+import { FileTree } from './components/FileTree/FileTree.jsx';
 
 function App() {
-  const tree = useFileExplorerTree();
-
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold text-slate-800">{tree?.name}</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Direct items: {tree?.children?.length ?? 0}
-      </p>
+    <div className="flex h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-200">
+      <aside className="w-64 shrink-0 border-r border-neutral-800 bg-neutral-900 flex flex-col">
+        <div className="h-8 px-3 flex items-center border-b border-neutral-800 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          Explorer
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <FileTree />
+        </div>
+      </aside>
+      <main className="flex-1 overflow-auto bg-neutral-950 p-6">
+        {/* Main content */}
+      </main>
     </div>
   );
 }
