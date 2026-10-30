@@ -1,4 +1,9 @@
-import { ItemNotFoundError } from './errors.js';
+import {
+  ItemNotFoundError,
+  ParentNotAFolderError,
+  InvalidNameError,
+  DuplicateNameError,
+} from './errors.js';
 import { EventEmitter } from './emitter.js';
 
 function deepFreeze(obj) {
@@ -145,5 +150,75 @@ export class FileExplorer {
 
   subscribe(listener) {
     return this.#emitter.subscribe(listener);
+  }
+
+  #validateName(name) {
+    if (typeof name !== 'string') {
+      throw new InvalidNameError(name);
+    }
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.includes('/') || trimmed.includes('\\')) {
+      throw new InvalidNameError(name);
+    }
+    return trimmed;
+  }
+
+  #checkDuplicateName(parentId, name, excludeId = null) {
+    const parent = this.#nodes.get(parentId);
+    if (!parent || !parent.childIds) return;
+
+    const lower = name.toLowerCase();
+    for (const childId of parent.childIds) {
+      if (excludeId && childId === excludeId) continue;
+      const child = this.#nodes.get(childId);
+      if (child && child.name.toLowerCase() === lower) {
+        throw new DuplicateNameError(name, parentId);
+      }
+    }
+  }
+
+  #createItem(parentId, name, type) {
+    const parent = this.#nodes.get(parentId);
+    if (!parent) {
+      throw new ItemNotFoundError(parentId);
+    }
+    if (parent.type !== 'folder') {
+      throw new ParentNotAFolderError(parentId);
+    }
+
+    const trimmedName = this.#validateName(name);
+    this.#checkDuplicateName(parentId, trimmedName);
+
+    const id = crypto.randomUUID();
+    const node = {
+      id,
+      name: trimmedName,
+      type,
+      parentId,
+    };
+
+    if (type === 'folder') {
+      node.childIds = [];
+    }
+
+    this.#nodes.set(id, node);
+    parent.childIds.push(id);
+
+    this.#notifyChange();
+
+    return {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      parentId: node.parentId,
+    };
+  }
+
+  createFile(parentId, name) {
+    return this.#createItem(parentId, name, 'file');
+  }
+
+  createFolder(parentId, name) {
+    return this.#createItem(parentId, name, 'folder');
   }
 }
