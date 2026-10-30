@@ -3,6 +3,7 @@ import {
   ParentNotAFolderError,
   InvalidNameError,
   DuplicateNameError,
+  CannotModifyRootError,
 } from './errors.js';
 import { EventEmitter } from './emitter.js';
 
@@ -220,5 +221,38 @@ export class FileExplorer {
 
   createFolder(parentId, name) {
     return this.#createItem(parentId, name, 'folder');
+  }
+
+  renameItem(id, newName) {
+    const item = this.#nodes.get(id);
+    if (!item) {
+      throw new ItemNotFoundError(id);
+    }
+    if (id === this.#rootId || item.parentId === null) {
+      throw new CannotModifyRootError('rename');
+    }
+
+    const trimmedName = this.#validateName(newName);
+    if (trimmedName === item.name) {
+      return {
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        parentId: item.parentId,
+      };
+    }
+
+    this.#checkDuplicateName(item.parentId, trimmedName, id);
+
+    item.name = trimmedName;
+
+    this.#notifyChange();
+
+    return {
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      parentId: item.parentId,
+    };
   }
 }
